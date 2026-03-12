@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/note.dart';
+import '../services/auth_service.dart';
 import '../services/storage.dart';
 import '../widgets/note_card.dart';
 import 'edit_screen.dart';
@@ -17,6 +19,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<Note> _notes = [];
   String _query = '';
+
+  Future<void> _signOut() async {
+    await AuthService.signOut();
+  }
 
   @override
   void initState() {
@@ -60,10 +66,29 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Smart Note - ${widget.studentName} - ${widget.studentId}'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Smart Note - ${widget.studentName} - ${widget.studentId}'),
+            if (user?.email != null)
+              Text(
+                user!.email!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+          ],
+        ),
         centerTitle: false,
+        actions: [
+          IconButton(
+            onPressed: _signOut,
+            icon: const Icon(Icons.logout),
+            tooltip: 'Đăng xuất',
+          ),
+        ],
       ),
       body: Column(
         children: [

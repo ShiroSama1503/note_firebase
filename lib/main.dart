@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'firebase_options.dart';
+import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
+import 'services/auth_service.dart';
 import 'services/storage.dart';
 
-const STUDENT_NAME = 'Dương Hồng Phúc';
-const STUDENT_ID = '2351060479';
+const studentName = 'Dương Hồng Phúc';
+const studentId = '2351060479';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   await Storage.init();
   runApp(const MainApp());
 }
@@ -32,6 +40,37 @@ class MainRouter extends StatelessWidget {
   Widget build(BuildContext context) {
     // Ensure intl default locale formatting is available
     Intl.defaultLocale = Intl.getCurrentLocale();
-    return const HomeScreen(studentName: STUDENT_NAME, studentId: STUDENT_ID);
+
+    return StreamBuilder<User?>(
+      stream: AuthService.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final user = snapshot.data;
+        return FutureBuilder<void>(
+          future: Storage.setCurrentUser(user?.uid),
+          builder: (context, storageSnapshot) {
+            if (storageSnapshot.connectionState != ConnectionState.done) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            if (user == null) {
+              return const AuthScreen();
+            }
+
+            return const HomeScreen(
+              studentName: studentName,
+              studentId: studentId,
+            );
+          },
+        );
+      },
+    );
   }
 }

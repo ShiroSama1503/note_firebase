@@ -3,17 +3,33 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/note.dart';
 
 class Storage {
-  static const _key = 'notes_v1';
+  static const _keyPrefix = 'notes_v1';
   static late SharedPreferences _prefs;
+  static String? _activeUserId;
   static final ValueNotifier<List<Note>> notesNotifier = ValueNotifier([]);
 
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    notesNotifier.value = [];
+  }
+
+  static Future<void> setCurrentUser(String? userId) async {
+    if (_activeUserId == userId) {
+      return;
+    }
+    _activeUserId = userId;
     _load();
   }
 
+  static String get _storageKey => '$_keyPrefix:${_activeUserId ?? 'signed_out'}';
+
   static void _load() {
-    final raw = _prefs.getString(_key);
+    if (_activeUserId == null) {
+      notesNotifier.value = [];
+      return;
+    }
+
+    final raw = _prefs.getString(_storageKey);
     if (raw == null) {
       notesNotifier.value = [];
       return;
@@ -26,9 +42,11 @@ class Storage {
   }
 
   static Future<void> _save() async {
+    if (_activeUserId == null) {
+      return;
+    }
     final raw = Note.listToJson(notesNotifier.value);
-    await _prefs.setString(_key, raw);
-    notesNotifier.notifyListeners();
+    await _prefs.setString(_storageKey, raw);
   }
 
   static Future<void> addOrUpdate(Note note) async {
