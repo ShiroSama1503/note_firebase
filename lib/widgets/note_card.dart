@@ -1,6 +1,3 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -13,22 +10,9 @@ class NoteCard extends StatelessWidget {
 
   const NoteCard({super.key, required this.note, this.onTap});
 
-  Uint8List? get _imageBytes {
-    if (!note.hasImage) {
-      return null;
-    }
-
-    try {
-      return base64Decode(note.imageBase64!);
-    } catch (_) {
-      return null;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final fmt = DateFormat('dd/MM/yyyy HH:mm');
-    final imageBytes = _imageBytes;
 
     return Material(
       color: Theme.of(context).cardColor,
@@ -42,14 +26,22 @@ class NoteCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (imageBytes != null) ...[
+              if (note.hasImage) ...[
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Image.memory(
-                    imageBytes,
+                  child: Image.network(
+                    note.imageUrl!,
                     height: 120,
                     width: double.infinity,
                     fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        height: 120,
+                        alignment: Alignment.center,
+                        color: const Color(0xFFF1F3F5),
+                        child: const Text('Ảnh không khả dụng'),
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(height: 10),

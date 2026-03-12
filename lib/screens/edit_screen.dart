@@ -1,12 +1,13 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/note.dart';
-import '../widgets/drawing_canvas.dart';
+import '../services/auth_service.dart';
+import '../services/note_image_storage_service.dart';
 import '../services/storage.dart';
+import '../widgets/drawing_canvas.dart';
 import 'drawing_board_screen.dart';
 
 class EditScreen extends StatefulWidget {
@@ -22,30 +23,25 @@ class _EditScreenState extends State<EditScreen> {
   late final TextEditingController _titleCtrl;
   late final TextEditingController _contentCtrl;
   final ImagePicker _imagePicker = ImagePicker();
-  String? _imageBase64;
+  Uint8List? _pendingImageBytes;
+  String? _imageUrl;
+  String? _imagePath;
   late List<SketchStroke> _drawingStrokes;
+  bool _removeCurrentImage = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
     _titleCtrl = TextEditingController(text: widget.note.title);
     _contentCtrl = TextEditingController(text: widget.note.content);
-    _imageBase64 = widget.note.imageBase64;
+    _imageUrl = widget.note.imageUrl;
+    _imagePath = widget.note.imagePath;
     _drawingStrokes = List<SketchStroke>.from(widget.note.drawingStrokes);
   }
 
-  Uint8List? get _imageBytes {
-    final raw = _imageBase64;
-    if (raw == null || raw.isEmpty) {
-      return null;
-    }
-
-    try {
-      return base64Decode(raw);
-    } catch (_) {
-      return null;
-    }
-  }
+  bool get _hasExistingImage =>
+      !_removeCurrentImage && _imageUrl != null && _imageUrl!.isNotEmpty;
 
   Future<void> _pickImage() async {
     try {
@@ -64,7 +60,8 @@ class _EditScreenState extends State<EditScreen> {
       }
 
       setState(() {
-        _imageBase64 = base64Encode(bytes);
+        _pendingImageBytes = bytes;
+        _removeCurrentImage = false;
       });
     } catch (_) {
       if (!mounted) {
@@ -94,20 +91,81 @@ class _EditScreenState extends State<EditScreen> {
   }
 
   Future<void> _saveIfNeeded() async {
-    final title = _titleCtrl.text.trim();
-    final content = _contentCtrl.text.trim();
-    final hasMedia = (_imageBase64?.isNotEmpty ?? false) || _drawingStrokes.isNotEmpty;
-
-    // Do not save if there is no text and no media.
-    if (title.isEmpty && content.isEmpty && !hasMedia) {
+    if (_isSaving) {
       return;
     }
 
-    widget.note.title = title;
-    widget.note.content = content;
-    widget.note.imageBase64 = _imageBase64;
-    widget.note.drawingStrokes = List<SketchStroke>.from(_drawingStrokes);
-    await Storage.addOrUpdate(widget.note);
+    _isSaving = true;
+    final title = _titleCtrl.text.trim();
+    final content = _contentCtrl.text.trim();
+    final hasMedia = _pendingImageBytes != null || _hasExistingImage || _drawingStrokes.isNotEmpty;
+
+    // Do not save if there is no text and no media.
+    if (title.isEmpty && content.isEmpty && !hasMedia) {
+      _isSaving = false;
+      return;
+    }
+
+    try {
+      final userId = AuthService.currentUser?.uid;
+      if (userId == null) {
+        throw Exception('Bạn cần đăng nhập lại để lưu ghi chú.');
+      }
+
+      String? nextImageUrl = _imageUrl;
+      String? nextImagePath = _imagePath;
+
+      if (_pendingImageBytes != null) {
+        final uploaded = await NoteImageStorageService.uploadImage(
+          bytes: _pendingImageBytes!,
+          userId: userId,
+          noteId: widget.note.id,
+        );
+        if (_imagePath != null && _imagePath != uploaded.path) {
+          await NoteImageStorageService.deleteImage(_imagePath!);
+        }
+        nextImageUrl = uploaded.publicUrl;
+        nextImagePath = uploaded.path;
+      } else if (_removeCurrentImage && _imagePath != null) {
+        await NoteImageStorageService.deleteImage(_imagePath!);
+        nextImageUrl = null;
+        nextImagePath = null;
+      }
+
+      widget.note.title = title;
+      widget.note.content = content;
+      widget.note.imageUrl = nextImageUrl;
+      widget.note.imagePath = nextImagePath;
+      widget.note.drawingStrokes = List<SketchStroke>.from(_drawingStrokes);
+      await Storage.addOrUpdate(widget.note);
+
+      _imageUrl = nextImageUrl;
+      _imagePath = nextImagePath;
+      _pendingImageBytes = null;
+      _removeCurrentImage = false;
+    } finally {
+      _isSaving = false;
+    }
+  }
+
+  Future<void> _handleClose() async {
+    if (_isSaving) {
+      return;
+    }
+
+    try {
+      await _saveIfNeeded();
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(Storage.messageFromException(error))),
+      );
+    }
   }
 
   @override
@@ -119,18 +177,22 @@ class _EditScreenState extends State<EditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final imageBytes = _imageBytes;
+    final imageBytes = _pendingImageBytes;
 
     return PopScope<void>(
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (!didPop) {
-          return;
+          await _handleClose();
         }
-        await _saveIfNeeded();
       },
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Soạn ghi chú'),
+          leading: IconButton(
+            onPressed: _handleClose,
+            icon: const Icon(Icons.arrow_back),
+          ),
           actions: [
             IconButton(
               onPressed: _pickImage,
@@ -164,7 +226,7 @@ class _EditScreenState extends State<EditScreen> {
                     FilledButton.tonalIcon(
                       onPressed: _pickImage,
                       icon: const Icon(Icons.add_photo_alternate_outlined),
-                      label: Text(imageBytes == null ? 'Thêm ảnh' : 'Đổi ảnh'),
+                      label: Text((imageBytes == null && !_hasExistingImage) ? 'Thêm ảnh' : 'Đổi ảnh'),
                     ),
                     FilledButton.tonalIcon(
                       onPressed: _openDrawingBoard,
@@ -173,9 +235,12 @@ class _EditScreenState extends State<EditScreen> {
                         _drawingStrokes.isEmpty ? 'Vẽ ghi chú' : 'Sửa bản vẽ',
                       ),
                     ),
-                    if (imageBytes != null)
+                    if (imageBytes != null || _hasExistingImage)
                       TextButton.icon(
-                        onPressed: () => setState(() => _imageBase64 = null),
+                        onPressed: () => setState(() {
+                          _pendingImageBytes = null;
+                          _removeCurrentImage = true;
+                        }),
                         icon: const Icon(Icons.delete_outline),
                         label: const Text('Xóa ảnh'),
                       ),
@@ -195,6 +260,24 @@ class _EditScreenState extends State<EditScreen> {
                       imageBytes,
                       height: 180,
                       fit: BoxFit.cover,
+                    ),
+                  ),
+                ] else if (_hasExistingImage) ...[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.network(
+                      _imageUrl!,
+                      height: 180,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          height: 180,
+                          alignment: Alignment.center,
+                          color: const Color(0xFFF1F3F5),
+                          child: const Text('Không tải được ảnh từ storage'),
+                        );
+                      },
                     ),
                   ),
                 ],

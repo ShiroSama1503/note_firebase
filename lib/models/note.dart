@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class SketchPoint {
   final double x;
   final double y;
@@ -38,7 +40,8 @@ class Note {
   String title;
   String content;
   DateTime updatedAt;
-  String? imageBase64;
+  String? imageUrl;
+  String? imagePath;
   List<SketchStroke> drawingStrokes;
 
   Note({
@@ -46,7 +49,8 @@ class Note {
     required this.title,
     required this.content,
     required this.updatedAt,
-    this.imageBase64,
+    this.imageUrl,
+    this.imagePath,
     List<SketchStroke>? drawingStrokes,
   }) : drawingStrokes = drawingStrokes ?? [];
 
@@ -55,11 +59,12 @@ class Note {
     required this.title,
     required this.content,
     required this.updatedAt,
-    this.imageBase64,
+    this.imageUrl,
+    this.imagePath,
     required this.drawingStrokes,
   });
 
-  bool get hasImage => imageBase64 != null && imageBase64!.isNotEmpty;
+  bool get hasImage => imageUrl != null && imageUrl!.isNotEmpty;
 
   bool get hasDrawing => drawingStrokes.isNotEmpty;
 
@@ -81,18 +86,56 @@ class Note {
         title: j['title'] as String,
         content: j['content'] as String,
         updatedAt: DateTime.parse(j['updatedAt'] as String),
-        imageBase64: j['imageBase64'] as String?,
+        imageUrl: j['imageUrl'] as String?,
+        imagePath: j['imagePath'] as String?,
         drawingStrokes: (j['drawingStrokes'] as List<dynamic>? ?? const [])
             .map((stroke) => SketchStroke.fromJson(stroke as Map<String, dynamic>))
             .toList(),
       );
+
+  factory Note.fromFirestore(Map<String, dynamic> j, String fallbackId) =>
+      Note._internal(
+        id: (j['id'] as String?) ?? fallbackId,
+        title: (j['title'] as String?) ?? '',
+        content: (j['content'] as String?) ?? '',
+        updatedAt: _readDateTime(j['updatedAt']),
+        imageUrl: j['imageUrl'] as String?,
+        imagePath: j['imagePath'] as String?,
+        drawingStrokes: (j['drawingStrokes'] as List<dynamic>? ?? const [])
+            .map((stroke) => SketchStroke.fromJson(stroke as Map<String, dynamic>))
+            .toList(),
+      );
+
+  static DateTime _readDateTime(dynamic value) {
+    if (value is Timestamp) {
+      return value.toDate();
+    }
+    if (value is DateTime) {
+      return value;
+    }
+    if (value is String) {
+      return DateTime.parse(value);
+    }
+    return DateTime.now();
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
         'content': content,
         'updatedAt': updatedAt.toIso8601String(),
-        'imageBase64': imageBase64,
+        'imageUrl': imageUrl,
+        'imagePath': imagePath,
+        'drawingStrokes': drawingStrokes.map((stroke) => stroke.toJson()).toList(),
+      };
+
+  Map<String, dynamic> toFirestore() => {
+        'id': id,
+        'title': title,
+        'content': content,
+        'updatedAt': Timestamp.fromDate(updatedAt),
+        'imageUrl': imageUrl,
+        'imagePath': imagePath,
         'drawingStrokes': drawingStrokes.map((stroke) => stroke.toJson()).toList(),
       };
 

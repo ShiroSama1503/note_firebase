@@ -49,7 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return _notes.where((n) => n.title.toLowerCase().contains(q)).toList();
   }
 
-  Future<void> _confirmDelete(BuildContext ctx, String id) async {
+  Future<void> _confirmDelete(BuildContext ctx, Note note) async {
     final ok = await showDialog<bool>(
       context: ctx,
       builder: (c) => AlertDialog(
@@ -61,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
-    if (ok == true) await Storage.delete(id);
+    if (ok == true) await Storage.delete(note);
   }
 
   @override
@@ -130,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           direction: DismissDirection.endToStart,
                           background: Container(alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 20), color: Colors.red, child: const Icon(Icons.delete, color: Colors.white)),
                           confirmDismiss: (_) async {
-                            await _confirmDelete(context, note.id);
+                            await _confirmDelete(context, note);
                             return false;
                           },
                           child: NoteCard(
